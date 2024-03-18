@@ -8,7 +8,7 @@
 # (2) Does the Hymenoptera order include ants?
 # (3) Who invented the voltaic pile?
 # (4) Does Avogadro Law talk about the relationship between same volume masses?
-###
+###ß
 
 import streamlit as st
 import pandas as pd
@@ -17,32 +17,34 @@ import gensim
 import numpy as np
 
 # load question-answer dataset 
-df = pd.read_csv("data/Question_Answer_Dataset_v1.2_S10.csv")
+df = pd.read_csv("/workspaces/word2vec-qa-chatbot-2-mtummalapalli-equinix/data/Question_Answer_Dataset_v1.2_S10.csv")
 
 # load question and answer vectors generated from pre-trained word2vec model
-vector = ...
-ques_vec = ...
-ans_vec = ...
+vector = np.load('/workspaces/word2vec-qa-chatbot-2-mtummalapalli-equinix/data/vector-advance.npz')
+ques_vec = vector['x']
+ans_vec = vector['y']
 
 # load th trained word2vec model 
 # Hint: You should use the word2vec model pre-trained with both question and answer sets.
-trained_w2v = ...
+trained_w2v = gensim.models.Word2Vec.load("/workspaces/word2vec-qa-chatbot-2-mtummalapalli-equinix/data/w2v-advanced.model")
+
+st.session_state = {}
 
 # App title
 st.set_page_config(page_title="Word2vec Question and Answer Chatbot")
 
 # Add header image 
-st.image("data/header-chat-box.png")
+st.image("/workspaces/word2vec-qa-chatbot-2-mtummalapalli-equinix/data/header-chat-box.png")
 
 # chat title 
-st.title("Word2vec Question and Answer Chatbot")
+st.title("Word2vec Miriam Flores Chatbot")
 
 # Store generated responses
 if "messages" not in st.session_state.keys():
-    st.session_state.messages = [{"role": "assistant", "content": "How may I help you?"}]
+    st.session_state['messages'] = [{"role": "assistant", "content": "How may I help you?"}]
 
 # Display chat messagess
-for message in st.session_state.messages:
+for message in st.session_state['messages']:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
@@ -50,13 +52,13 @@ for message in st.session_state.messages:
 def trained_sentence_vec(sent):
     # Filter out terms that are not in the vocabulary from the question sentence
     # Hint: Use model.wv to get the whole vocabulary
-    qu_voc = ...
+    qu_voc = [tm for tm in sent if tm in trained_w2v.wv]
     # Get the embedding of the characters
     # Hint: Stack arrays in sequence vertically using np.vstack
-    emb = ...
+    emb = np.vstack([trained_w2v.wv[tm] for tm in qu_voc])
     # Calculate the arithmetic mean for the vectors of each included word along the column 
     # to get the vector of the question
-    ave_vec = ...
+    ave_vec = np.mean(emb, axis=0)
     return ave_vec
 
 # Function to find the answer through vector search
@@ -68,22 +70,21 @@ def trained_sentence_vec(sent):
 def find_answer(qr_sentence, ques_vec, ans_vec):
     # use one query sentence to retrieve answer
     qr_sentence = gensim.utils.simple_preprocess(qr_sentence)
-    qr_sentence = token(qr_sentence)
     qr_sent_vec = trained_sentence_vec(qr_sentence)
 
     # perform vector search through similarity comparison
     # define the number of feature (vector) dimensions
-    n_dim = ...
+    n_dim = ques_vec.shape[1]
     # define the number of pairs of question and answer
-    n_q_a = ... 
+    n_q_a = ques_vec.shape[0] 
     # define ques_vec as a numpy array that is a float of size 32 bits
-    x = ...
+    x = np.vstack(ques_vec).astype(np.float32)
     # define ans_vec as a numpy array that is a float of size 32 bits
-    y = ...
+    y = np.vstack(ans_vec).astype(np.float32)
     # reshape qr_sent_vec
     q = qr_sent_vec.reshape(1, -1)
     # build the faiss index, n_dim=size of vectors using faiss.index_factory with METRIC_INNER_PRODUCT parameter
-    index = ...
+    index = faiss.index_factory(n_dim, "Flat", faiss.METRIC_INNER_PRODUCT)
 	
     # add all questions into the faiss index
     faiss.normalize_L2(x)
@@ -96,31 +97,31 @@ def find_answer(qr_sentence, ques_vec, ans_vec):
     # do vector search for the query sentence
     # return similarity score and idx using index.search function
     faiss.normalize_L2(q)
-    similarity, idx = ...
+    similarity, idx = index.search(q, k=index.ntotal)
     ans_idx = idx[0][0]
 	
     # find out the optimal answer index
     # Hint: if ans_idx is over the number of question-answer pairs, we need to make a if-statement to 
     # return an answer index align with our question-answer dataset
-    if...
+    if  ans_idx >= n_q_a:
+        ans_idx -= n_q_a
       
     return ans_idx
 
 
 # User-provided prompt
 if prompt := st.chat_input("What's your question?"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state['messages'].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.write(prompt)
 
 # Generate a new response if last message is not from assistant
-if st.session_state.messages[-1]["role"] != "assistant":
+if st.session_state['messages'][-1]["role"] != "assistant":
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            ans_idx = find_answer(prompt, ques_vec)
+            ans_idx = find_answer(prompt, ques_vec, ans_vec)
             response = df["Answer"][ans_idx]
             st.write(response)
             
     message = {"role": "assistant", "content": response}
-    st.session_state.messages.append(message)
-
+    st.session_state['messages'].append(message)
